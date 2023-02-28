@@ -1,0 +1,44 @@
+#!/bin/bash
+#
+# This script traverses all commits of a git repository in the current directory
+# and counts the number of words that are changed, i.e. added or deleted for all
+# md files. It dumps information about the date of the commit and the changed
+# words at that date into a file containing a time-stamp (YYYY-MM-DD). Next,
+# there are some counts, viz. the number of added, deleted, and total words.
+# This is then plotted by gnuplot and opened.
+branch="$(git branch --show-current)"
+words=0
+
+scratch_dir=$(mktemp -d)
+countfile="${scratch_dir}/counts.dat"
+
+for commit in $(git rev-list --reverse $branch)
+do
+  date=$(git show -s --format=%ct $commit)
+  added=$(git show -p --word-diff=porcelain $commit "*.md" | grep -e '^+[^+]' | wc -w)
+  deleted=$(git show -p --word-diff=porcelain $commit "*.md" | grep -e '^-[^-]' | wc -w)
+
+  words=$(($words+$added))
+  words=$(($words-$deleted))
+
+  echo "${date} ${words}" >> "${countfile}"
+done
+
+pngfile="${scratch_dir}/chart.png"
+
+gnuplot << EOL
+set terminal pngcairo size 1000,1000 enhanced font 'Verdana,10'
+set output '${pngfile}'
+set xdata time
+set format x "%Y-%m-%d"
+set xtics autofreq 7776000
+set xlabel "Date"
+set ylabel "Word count"
+set title "Word count over time for {/:Italic $(basename "$(pwd)")}"
+set timefmt "%s"
+plot "${countfile}" using 1:2 notitle with lines
+EOL
+
+open "${pngfile}"
+
+exit 0
